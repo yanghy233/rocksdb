@@ -60,6 +60,7 @@ LIB_SOURCES =                                                   \
   db/transaction_log_impl.cc                                    \
   db/trim_history_scheduler.cc                                  \
   db/version_builder.cc                                         \
+  db/token_bucket.cc											\
   db/version_edit.cc                                            \
   db/version_edit_handler.cc                                    \
   db/version_set.cc                                             \

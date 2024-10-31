@@ -6,11 +6,11 @@
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
-#include "db/db_impl/db_impl.h"
-
 #include <cinttypes>
+#include <iostream>
 
 #include "db/builder.h"
+#include "db/db_impl/db_impl.h"
 #include "db/error_handler.h"
 #include "env/composite_env_wrapper.h"
 #include "file/read_write_util.h"
@@ -1520,6 +1520,15 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   if (s.ok() && impl->immutable_db_options_.persist_stats_to_disk) {
     // try to read format version but no need to fail Open() even if it fails
     s = impl->PersistentStatsProcessFormatVersion();
+  }
+
+  // start requests rate limit control
+  if (db_options.prevent_write_stall) {
+    for (const auto& cf : column_families) {
+      auto cfd =
+          impl->versions_->GetColumnFamilySet()->GetColumnFamily(cf.name);
+      cfd->init_token_bucket();
+    }
   }
 
   if (s.ok()) {

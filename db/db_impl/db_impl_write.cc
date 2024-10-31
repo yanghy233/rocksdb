@@ -6,9 +6,10 @@
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
-#include "db/db_impl/db_impl.h"
-
 #include <cinttypes>
+#include <iostream>
+
+#include "db/db_impl/db_impl.h"
 #include "db/error_handler.h"
 #include "db/event_helpers.h"
 #include "monitoring/perf_context_imp.h"
@@ -916,6 +917,7 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
     // for previous one. It might create a fairness issue that expiration
     // might happen for smaller writes but larger writes can go through.
     // Can optimize it if it is an issue.
+    std::cout << "[RocksDB] start to DelayWrite" << std::endl;
     status = DelayWrite(last_batch_group_size_, write_options);
     PERF_TIMER_START(write_pre_and_post_process_time);
   }
@@ -1806,6 +1808,11 @@ size_t DBImpl::GetWalPreallocateBlockSize(uint64_t write_buffer_size) const {
 // can call if they wish
 Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* column_family,
                const Slice& key, const Slice& value) {
+    // get the cfd and limit the requests
+    auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
+    auto cfd = cfh->cfd();
+    cfd->getTokenBucket()->Request((int64_t)(key.size() + value.size()));
+
   if (nullptr == opt.timestamp) {
     // Pre-allocate size of write batch conservatively.
     // 8 bytes are taken by header, 4 bytes for count, 1 byte for type,

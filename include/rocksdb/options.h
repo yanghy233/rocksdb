@@ -1144,6 +1144,10 @@ struct DBOptions {
   // not be used for recovery if best_efforts_recovery is true.
   // Default: false
   bool best_efforts_recovery = false;
+
+  // By default, RocksDB will control the rate of requests to prevent from being
+  // writing stall.
+  bool prevent_write_stall = true;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)

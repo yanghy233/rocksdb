@@ -520,6 +520,7 @@ ColumnFamilyData::ColumnFamilyData(
       allow_2pc_(db_options.allow_2pc),
       last_memtable_id_(0),
       db_paths_registered_(false) {
+    token_bucket_ = new TokenBucket(this);
   if (id_ != kDummyColumnFamilyDataId) {
     // TODO(cc): RegisterDbPaths can be expensive, considering moving it
     // outside of this constructor which might be called with db mutex held.
@@ -1479,6 +1480,11 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
   ColumnFamilyData* new_cfd = new ColumnFamilyData(
       id, name, dummy_versions, table_cache_, write_buffer_manager_, options,
       *db_options_, file_options_, this, block_cache_tracer_);
+
+  if (options.prevent_write_stall) {
+      new_cfd->init_token_bucket();
+  }
+
   column_families_.insert({name, id});
   column_family_data_.insert({id, new_cfd});
   max_column_family_ = std::max(max_column_family_, id);

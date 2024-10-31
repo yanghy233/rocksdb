@@ -26,6 +26,7 @@
 #include "rocksdb/options.h"
 #include "trace_replay/block_cache_tracer.h"
 #include "util/thread_local.h"
+#include "db/token_bucket.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -267,6 +268,17 @@ class ColumnFamilySet;
 class ColumnFamilyData {
  public:
   ~ColumnFamilyData();
+
+  void init_token_bucket() {
+      if (!token_bucket_) {
+          token_bucket_ = new TokenBucket(this);
+      }
+      token_bucket_->Start();
+  }
+
+  TokenBucket *getTokenBucket() {
+      return token_bucket_;
+  }
 
   // thread-safe
   uint32_t GetID() const { return id_; }
@@ -598,6 +610,8 @@ class ColumnFamilyData {
   std::vector<std::shared_ptr<FSDirectory>> data_dirs_;
 
   bool db_paths_registered_;
+
+  TokenBucket* token_bucket_{nullptr};
 };
 
 // ColumnFamilySet has interesting thread-safety requirements
