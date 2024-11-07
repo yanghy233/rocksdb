@@ -6,10 +6,13 @@
 #include <queue>
 #include <sys/time.h>
 #include "util/mutexlock.h"
+#include "monitoring/statistics.h"
+#include "options/cf_options.h"
 
 #define DEFAULT_RATE (1024 * 1024 * 400)
+#define DEFAULT_MIN_RATE (1024 * 1024 * 80)
 #define DEFAULT_REFILL_PERIOD_US (50 * 1000) // 50ms
-#define TUNE_REQUESTS (500 * 1000)  // 每n个请求调整一次速率
+#define TUNE_REQUESTS (200 * 1000)
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -20,6 +23,7 @@ namespace ROCKSDB_NAMESPACE {
     public:
         explicit TokenBucket(ColumnFamilyData *cfd) : cfd_(cfd) {
             refill_period_us_ = DEFAULT_REFILL_PERIOD_US;
+            max_rate_bytes_per_sec_ = 0x7fffffffffffffff;
         };
 
         ~TokenBucket() {
@@ -56,8 +60,16 @@ namespace ROCKSDB_NAMESPACE {
         // 请求令牌
         void Request(int64_t bytes);
 
+        void AdjustRate(int64_t last_rate);
+
+        void CalculateMaxRate();
+
     private:
         ColumnFamilyData *cfd_;
+
+        const rocksdb::ImmutableCFOptions* immutable_options_{nullptr};
+
+        std::atomic<int64_t> max_rate_bytes_per_sec_;
 
         // 开始到现在的总请求数
         std::atomic<int64_t> total_requests_{0};
@@ -95,6 +107,9 @@ namespace ROCKSDB_NAMESPACE {
         std::atomic<bool> stop_{false};
 
         std::atomic<bool> first_time_{true};
+
+        std::atomic<uint64_t> last_flush_bytes_;
+        std::atomic<uint64_t> last_compaction_bytes_;
 
 
     };
