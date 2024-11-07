@@ -2438,8 +2438,8 @@ void VersionStorageInfo::ComputeCompactionScore(
           level_bytes_no_compacting += f->compensated_file_size;
         }
       }
-      // @yhy set Q
-      score = static_cast<double>(level_bytes_no_compacting) * 5 / 4 /
+      // @yhy
+      score = static_cast<double>(level_bytes_no_compacting) /
               MaxBytesForLevel(level);
     }
     compaction_level_[level] = level;
