@@ -12,7 +12,7 @@
 #define DEFAULT_RATE (1024 * 1024 * 400)
 #define DEFAULT_MIN_RATE (1024 * 1024 * 80)
 #define DEFAULT_REFILL_PERIOD_US (40 * 1000) // default refill time
-#define TUNE_REQUESTS (200 * 1000)
+#define TUNE_REQUESTS (500 * 1000)
 
 namespace ROCKSDB_NAMESPACE {
 

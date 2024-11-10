@@ -2439,8 +2439,16 @@ void VersionStorageInfo::ComputeCompactionScore(
         }
       }
       // @yhy
+      uint64_t RDlevel = 0, level_remain_bytes = MaxBytesForLevel(level);
+      if (level_bytes_no_compacting >= last_level_bytes_no_compacting_[level]) {
+        RDlevel = level_bytes_no_compacting - last_level_bytes_no_compacting_[level];
+      }
+      if (MaxBytesForLevel(level) > last_level_bytes_no_compacting_[level]) {
+        level_remain_bytes -= last_level_bytes_no_compacting_[level];
+      }
       score = static_cast<double>(level_bytes_no_compacting) /
-              MaxBytesForLevel(level);
+              MaxBytesForLevel(level) + std::max(static_cast<double>(RDlevel) / level_remain_bytes, 0.5);
+      last_level_bytes_no_compacting_[level] = level_bytes_no_compacting;
     }
     compaction_level_[level] = level;
     compaction_score_[level] = score;
