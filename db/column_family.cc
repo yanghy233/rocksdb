@@ -554,6 +554,7 @@ ColumnFamilyData::ColumnFamilyData(
       db_paths_registered_(false),
       mempurge_used_(false),
       next_epoch_number_(1) {
+  token_bucket_ = new TokenBucket(this);
   if (id_ != kDummyColumnFamilyDataId) {
     // TODO(cc): RegisterDbPaths can be expensive, considering moving it
     // outside of this constructor which might be called with db mutex held.
@@ -1700,6 +1701,11 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
       id, name, dummy_versions, table_cache_, write_buffer_manager_, options,
       *db_options_, &file_options_, this, block_cache_tracer_, io_tracer_,
       db_id_, db_session_id_);
+
+  if (options.prevent_write_stall) {
+    new_cfd->init_token_bucket();
+  }
+
   column_families_.insert({name, id});
   column_family_data_.insert({id, new_cfd});
   auto ucmp = new_cfd->user_comparator();

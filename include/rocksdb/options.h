@@ -458,6 +458,10 @@ class CompactionService : public Customizable {
 };
 
 struct DBOptions {
+  // By default, RocksDB will control the rate of requests to prevent from being
+  // writing stall.
+  bool prevent_write_stall = true;
+
   // The function recovers options to the option as in version 4.6.
   // NOT MAINTAINED: This function has not been and is not maintained.
   // DEPRECATED: This function might be removed in a future release.

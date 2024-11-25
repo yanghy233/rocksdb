@@ -2137,6 +2137,15 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     s = impl->PersistentStatsProcessFormatVersion();
   }
 
+  // start requests rate limit control
+  if (db_options.prevent_write_stall) {
+    for (const auto& cf : column_families) {
+      auto cfd =
+          impl->versions_->GetColumnFamilySet()->GetColumnFamily(cf.name);
+      cfd->init_token_bucket();
+    }
+  }
+
   if (s.ok()) {
     for (auto cfd : *impl->versions_->GetColumnFamilySet()) {
       if (!cfd->mem()->IsSnapshotSupported()) {

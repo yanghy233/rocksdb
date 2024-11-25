@@ -67,6 +67,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+#define DEFAULT_MAX_LEVEL_NUM 10
+
 namespace log {
 class Writer;
 }
@@ -777,6 +779,8 @@ class VersionStorageInfo {
 
   friend class Version;
   friend class VersionSet;
+
+  uint64_t last_level_bytes_no_compacting_[DEFAULT_MAX_LEVEL_NUM];
 };
 
 struct ObsoleteFileInfo {

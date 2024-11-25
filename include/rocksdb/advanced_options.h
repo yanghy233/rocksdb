@@ -148,6 +148,10 @@ enum class PrepopulateBlobCache : uint8_t {
 };
 
 struct AdvancedColumnFamilyOptions {
+  // By default, RocksDB will control the rate of requests to prevent from being
+  // writing stall.
+  bool prevent_write_stall = true;
+
   // The maximum number of write buffers that are built up in memory.
   // The default and the minimum number is 2, so that when 1 write buffer
   // is being flushed to storage, new writes can continue to the other

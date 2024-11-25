@@ -60,6 +60,7 @@ LIB_SOURCES =                                                   \
   db/dbformat.cc                                                \
   db/error_handler.cc                                           \
   db/event_helpers.cc                                           \
+  db/token_bucket.cc											\
   db/experimental.cc                                            \
   db/external_sst_file_ingestion_job.cc                         \
   db/file_indexer.cc                                            \

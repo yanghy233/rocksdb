@@ -643,6 +643,7 @@ set(SOURCES
         db/blob/blob_log_writer.cc
         db/blob/blob_source.cc
         db/blob/prefetch_buffer_collection.cc
+        db/token_bucket.cc
         db/builder.cc
         db/c.cc
         db/column_family.cc

@@ -3547,13 +3547,25 @@ void VersionStorageInfo::ComputeCompactionScore(
           level_bytes_no_compacting += f->compensated_file_size;
         }
       }
+
+      // @yhy
+      uint64_t RDlevel = 0, level_remain_bytes = MaxBytesForLevel(level);
+      if (level_bytes_no_compacting >= last_level_bytes_no_compacting_[level]) {
+        RDlevel = level_bytes_no_compacting - last_level_bytes_no_compacting_[level];
+      }
+      if (MaxBytesForLevel(level) > last_level_bytes_no_compacting_[level]) {
+        level_remain_bytes -= last_level_bytes_no_compacting_[level];
+      }
+
       if (!immutable_options.level_compaction_dynamic_level_bytes) {
         score = static_cast<double>(level_bytes_no_compacting) /
                 MaxBytesForLevel(level);
       } else {
         if (level_bytes_no_compacting < MaxBytesForLevel(level)) {
+//          score = static_cast<double>(level_bytes_no_compacting) /
+//                  MaxBytesForLevel(level);
           score = static_cast<double>(level_bytes_no_compacting) /
-                  MaxBytesForLevel(level);
+                      MaxBytesForLevel(level) + std::max(static_cast<double>(RDlevel) / level_remain_bytes, 0.5);
         } else {
           // If there are a large mount of data being compacted down to the
           // current level soon, we would de-prioritize compaction from
@@ -3574,6 +3586,9 @@ void VersionStorageInfo::ComputeCompactionScore(
                          (1.001 + 0.001 * (lowest_unnecessary_level_ - level)));
         }
       }
+
+      last_level_bytes_no_compacting_[level] = level_bytes_no_compacting;
+
       if (level <= lowest_unnecessary_level_) {
         total_downcompact_bytes += level_total_bytes;
       } else if (level_total_bytes > MaxBytesForLevel(level)) {
