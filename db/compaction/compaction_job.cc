@@ -7,6 +7,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include "db/compaction/compaction_job.h"
+
 #include <algorithm>
 #include <cinttypes>
 #include <functional>
@@ -19,7 +21,6 @@
 #include <vector>
 
 #include "db/builder.h"
-#include "db/compaction/compaction_job.h"
 #include "db/db_impl/db_impl.h"
 #include "db/db_iter.h"
 #include "db/dbformat.h"
@@ -245,9 +246,7 @@ struct CompactionJob::CompactionState {
   uint64_t num_output_records;
 
   explicit CompactionState(Compaction* c)
-      : compaction(c),
-        total_bytes(0),
-        num_output_records(0) {}
+      : compaction(c), total_bytes(0), num_output_records(0) {}
 
   size_t NumOutputFiles() {
     size_t total = 0;
@@ -435,6 +434,7 @@ struct RangeWithSize {
       : range(a, b), size(s) {}
 };
 
+// 划定每个 subcompaction key 的左右边界
 void CompactionJob::GenSubcompactionBoundaries() {
   auto* c = compact_->compaction;
   auto* cfd = c->column_family_data();
@@ -496,12 +496,45 @@ void CompactionJob::GenSubcompactionBoundaries() {
 
   // Combine consecutive pairs of boundaries into ranges with an approximate
   // size of data covered by keys in that range
-  uint64_t sum = 0;
-  std::vector<RangeWithSize> ranges;
+
+  //   uint64_t sum = 0;
+
+  //   std::vector<RangeWithSize> ranges;
+
   // Get input version from CompactionState since it's already referenced
   // earlier in SetInputVersioCompaction::SetInputVersion and will not change
   // when db_mutex_ is released below
   auto* v = compact_->compaction->input_version();
+
+  //   for (auto it = bounds.begin();;) {
+  //     const Slice a = *it;
+  //     ++it;
+
+  //     if (it == bounds.end()) {
+  //       break;
+  //     }
+
+  //     const Slice b = *it;
+
+  //     // ApproximateSize could potentially create table reader iterator to
+  //     seek
+  //     // to the index block and may incur I/O cost in the process. Unlock db
+  //     // mutex to reduce contention
+  //     db_mutex_->Unlock();
+  //     uint64_t size = versions_->ApproximateSize(SizeApproximationOptions(),
+  //     v, a,
+  //                                                b, start_lvl, out_lvl + 1,
+  //                                                TableReaderCaller::kCompaction);
+  //     db_mutex_->Lock();
+  //     ranges.emplace_back(a, b, size);
+  //     sum += size;
+  //   }
+
+  std::vector<std::thread> threads;
+  std::vector<RangeWithSize> ranges;
+  std::atomic<uint64_t> sum = 0;
+  // 循环遍历 bounds，分配给每个线程处理
+  db_mutex_->Unlock();  // 解锁，减少锁竞争
   for (auto it = bounds.begin();;) {
     const Slice a = *it;
     ++it;
@@ -512,30 +545,41 @@ void CompactionJob::GenSubcompactionBoundaries() {
 
     const Slice b = *it;
 
-    // ApproximateSize could potentially create table reader iterator to seek
-    // to the index block and may incur I/O cost in the process. Unlock db
-    // mutex to reduce contention
-    db_mutex_->Unlock();
-    uint64_t size = versions_->ApproximateSize(SizeApproximationOptions(), v, a,
-                                               b, start_lvl, out_lvl + 1,
-                                               TableReaderCaller::kCompaction);
-    db_mutex_->Lock();
-    ranges.emplace_back(a, b, size);
-    sum += size;
+    // 为每一对 (a, b) 创建一个新线程
+    std::mutex ranges_mutex;
+    threads.push_back(std::thread([this, a, b, v, &sum, start_lvl, out_lvl, &ranges,
+                                   &ranges_mutex]() {
+      uint64_t size = versions_->ApproximateSize(
+          SizeApproximationOptions(), v, a, b, start_lvl, out_lvl + 1,
+          TableReaderCaller::kCompaction);
+
+      // 使用锁来保护对 ranges 的访问
+      ranges_mutex.lock();
+      ranges.emplace_back(a, b, size);
+      ranges_mutex.unlock();
+
+      sum.fetch_add(size, std::memory_order_relaxed);  // 使用原子操作更新 sum
+    }));
   }
+
+  // 等待所有线程执行完毕
+  for (auto& t : threads) {
+    t.join();
+  }
+  db_mutex_->Lock();  // 计算完成后再加锁
 
   // Group the ranges into subcompactions
   const double min_file_fill_percent = 4.0 / 5;
   int base_level = v->storage_info()->base_level();
   uint64_t max_output_files = static_cast<uint64_t>(std::ceil(
       sum / min_file_fill_percent /
-      MaxFileSizeForLevel(*(c->mutable_cf_options()), out_lvl,
+      MaxFileSizeForLevel(
+          *(c->mutable_cf_options()), out_lvl,
           c->immutable_cf_options()->compaction_style, base_level,
           c->immutable_cf_options()->level_compaction_dynamic_level_bytes)));
-  uint64_t subcompactions =
-      std::min({static_cast<uint64_t>(ranges.size()),
-                static_cast<uint64_t>(c->max_subcompactions()),
-                max_output_files});
+  uint64_t subcompactions = std::min(
+      {static_cast<uint64_t>(ranges.size()),
+       static_cast<uint64_t>(c->max_subcompactions()), max_output_files});
 
   if (subcompactions > 1) {
     double mean = sum * 1.0 / subcompactions;
@@ -563,6 +607,8 @@ void CompactionJob::GenSubcompactionBoundaries() {
   }
 }
 
+// 多线程运行 subcompaction，每个线程调用 ProcessKeyValueCompaction,
+// 并处理运行后的事
 Status CompactionJob::Run() {
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_RUN);
@@ -641,11 +687,12 @@ Status CompactionJob::Run() {
           break;
         }
         // Verify that the table is usable
-        // We set for_compaction to false and don't OptimizeForCompactionTableRead
-        // here because this is a special case after we finish the table building
-        // No matter whether use_direct_io_for_flush_and_compaction is true,
-        // we will regard this verification as user reads since the goal is
-        // to cache it here for further user reads
+        // We set for_compaction to false and don't
+        // OptimizeForCompactionTableRead here because this is a special case
+        // after we finish the table building No matter whether
+        // use_direct_io_for_flush_and_compaction is true, we will regard this
+        // verification as user reads since the goal is to cache it here for
+        // further user reads
         InternalIterator* iter = cfd->table_cache()->NewIterator(
             ReadOptions(), file_options_, cfd->internal_comparator(),
             *files_meta[file_idx], /*range_del_agg=*/nullptr, prefix_extractor,
@@ -660,7 +707,8 @@ Status CompactionJob::Run() {
         auto s = iter->status();
 
         if (s.ok() && paranoid_file_checks_) {
-          for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {}
+          for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+          }
           s = iter->status();
         }
 
@@ -673,8 +721,8 @@ Status CompactionJob::Run() {
       }
     };
     for (size_t i = 1; i < compact_->sub_compact_states.size(); i++) {
-      thread_pool.emplace_back(verify_table,
-                               std::ref(compact_->sub_compact_states[i].status));
+      thread_pool.emplace_back(
+          verify_table, std::ref(compact_->sub_compact_states[i].status));
     }
     verify_table(compact_->sub_compact_states[0].status);
     for (auto& thread : thread_pool) {
@@ -811,6 +859,7 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   return status;
 }
 
+// 每个子线程实际执行 subcomapction 的地方，传入当前 subcompact 的元信息
 void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   assert(sub_compact != nullptr);
 
@@ -1192,9 +1241,8 @@ Status CompactionJob::FinishCompactionOutputFile(
     // bound. If the end of subcompaction is null or the upper bound is null,
     // it means that this file is the last file in the compaction. So there
     // will be no overlapping between this file and others.
-    assert(sub_compact->end == nullptr ||
-           upper_bound == nullptr ||
-           ucmp->Compare(*upper_bound , *sub_compact->end) <= 0);
+    assert(sub_compact->end == nullptr || upper_bound == nullptr ||
+           ucmp->Compare(*upper_bound, *sub_compact->end) <= 0);
     auto it = range_del_agg->NewIterator(lower_bound, upper_bound,
                                          has_overlapping_endpoints);
     // Position the range tombstone output iterator. There may be tombstone

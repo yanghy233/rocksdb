@@ -242,9 +242,7 @@ Compaction::Compaction(VersionStorageInfo* vstorage,
   if (is_manual_compaction_) {
     compaction_reason_ = CompactionReason::kManualCompaction;
   }
-  if (max_subcompactions_ == 0) {
-    max_subcompactions_ = immutable_cf_options_.max_subcompactions;
-  }
+  max_subcompactions_ = 5;
   if (!bottommost_level_) {
     // Currently we only enable dictionary compression during compaction to the
     // bottommost level.

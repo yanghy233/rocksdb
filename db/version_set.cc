@@ -5464,6 +5464,7 @@ uint64_t VersionSet::ApproximateSize(const SizeApproximationOptions& options,
   return total_full_size;
 }
 
+// 根据给定的键，估算键在 SST 文件中的偏移量
 uint64_t VersionSet::ApproximateOffsetOf(Version* v, const FdWithKeyRange& f,
                                          const Slice& key,
                                          TableReaderCaller caller) {
